@@ -77,11 +77,13 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
             }
             _hasBeenEvaluated = true;
 
-            dependentObservable["notifySubscribers"](_latestValue, "beforeChange");
+            if (_latestValue !== newValue || options["alwaysNotify"]) {
+                dependentObservable["notifySubscribers"](_latestValue, "beforeChange");
 
-            _latestValue = newValue;
-            if (DEBUG) dependentObservable._latestValue = _latestValue;
-            dependentObservable["notifySubscribers"](_latestValue);
+                _latestValue = newValue;
+                if (DEBUG) dependentObservable._latestValue = _latestValue;
+                dependentObservable["notifySubscribers"](_latestValue);
+            }
 
         } finally {
             ko.dependencyDetection.end();
@@ -162,7 +164,7 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
         var existingDisposeWhenFunction = disposeWhen;
         disposeWhen = function () {
             return !ko.utils.domNodeIsAttachedToDocument(disposeWhenNodeIsRemoved) || existingDisposeWhenFunction();
-        }
+        };
     }
 
     return dependentObservable;
