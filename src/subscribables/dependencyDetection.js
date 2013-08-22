@@ -1,6 +1,7 @@
 
 ko.dependencyDetection = (function () {
     var _frames = [];
+    var _nestedRepeaterHandlers = [];
 
     return {
         begin: function (callback) {
@@ -29,6 +30,23 @@ ko.dependencyDetection = (function () {
                 return callback.apply(callbackTarget, callbackArgs || []);
             } finally {
                 _frames.pop();
+            }
+        },
+
+        pushRepeater: function (callback) {
+            _nestedRepeaterHandlers.push(callback);
+        },
+
+        popRepeater: function () {
+            _nestedRepeaterHandlers.pop();
+        },
+
+        registerRepeater: function (repeater) {
+            // If this is nested within other repeaters, mark it for automatic cleanup.
+            var len;
+            if ((len = _nestedRepeaterHandlers.length)) {
+                var handle = _nestedRepeaterHandlers[len - 1];
+                handle(repeater);
             }
         }
     };

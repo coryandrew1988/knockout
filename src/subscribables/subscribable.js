@@ -4,28 +4,22 @@ ko.subscription = function (target, callback, disposeCallback) {
     this.target = target;
     this.callback = callback;
     this.disposeCallback = disposeCallback;
-    this.innerSubscriptions = [];
-    // If this subscription is nested within other subscriptions, mark it for automatic cleanup.
-    var nsl;
-    if ((nsl = ko.subscription.nested.length)) {
-        ko.subscription.nested[nsl - 1].innerSubscriptions.push(this);
-    }
+    this._nestedRepeaters = [];
+    ko.dependencyDetection.registerRepeater(this);
     ko.exportProperty(this, 'dispose', this.dispose);
 };
 ko.subscription.prototype.dispose = function () {
     this.isDisposed = true;
-    this.disposeNested();
+    this.disposeNestedRepeaters();
     this.disposeCallback();
 };
-ko.subscription.prototype.disposeNested = function () {
-    // If any subscriptions have been nested, dispose them.
-    ko.utils.arrayForEach(this.innerSubscriptions, function (subcription) {
+ko.subscription.prototype.disposeNestedRepeaters = function () {
+    // Dispose any subscriptions.
+    ko.utils.arrayForEach(this._nestedRepeaters, function (subcription) {
         subcription.dispose();
     });
     this.innerSubscriptions = [];
 };
-
-ko.subscription.nested = [];
 
 ko.subscribable = function () {
     this._subscriptions = {};
@@ -58,15 +52,17 @@ ko.subscribable['fn'] = {
         if (this._subscriptions[event]) {
             ko.dependencyDetection.ignore(function() {
                 ko.utils.arrayForEach(this._subscriptions[event].slice(0), function (subscription) {
-                    subscription.disposeNested();
                     // In case a subscription was disposed during the arrayForEach cycle, check
                     // for isDisposed on each subscription before invoking its callback
                     if (subscription && (subscription.isDisposed !== true)) {
-                        ko.subscription.nested.push(subscription);
                         try {
+                            subscription.disposeNestedRepeaters();
+                            ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
+                                subscription._nestedRepeaters.push(nestedRepeater);
+                            });
                             subscription.callback(valueToNotify);
                         } finally {
-                            ko.subscription.nested.pop();
+                            ko.dependencyDetection.popRepeater();
                         }
                     }
                 });
