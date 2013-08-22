@@ -1,3 +1,4 @@
+/*jshint sub: true */
 ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunctionTarget, options) {
     var _latestValue,
         _hasBeenEvaluated = false,
