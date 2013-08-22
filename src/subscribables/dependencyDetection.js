@@ -43,10 +43,18 @@ ko.dependencyDetection = (function () {
 
         registerRepeater: function (repeater) {
             // If this is nested within other repeaters, mark it for automatic cleanup.
-            var len;
-            if ((len = _nestedRepeaterHandlers.length)) {
-                var handle = _nestedRepeaterHandlers[len - 1];
+            var handle = _nestedRepeaterHandlers[_nestedRepeaterHandlers.length - 1];
+            if (handle) {
                 handle(repeater);
+            }
+        },
+
+        preserveRepeaters: function (callback, callbackTarget, callbackArgs) {
+            try {
+                _nestedRepeaterHandlers.push(null);
+                return callback.apply(callbackTarget, callbackArgs || []);
+            } finally {
+                _nestedRepeaterHandlers.pop();
             }
         }
     };
