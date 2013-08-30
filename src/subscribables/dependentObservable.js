@@ -3,20 +3,23 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
     var _latestValue,
         _hasBeenEvaluated = false,
         _isBeingEvaluated = false,
+        _holdEvaluation = false,
         readFunction = evaluatorFunctionOrOptions;
 
-    if (readFunction && typeof readFunction == "object") {
+    if (readFunction && typeof readFunction === "object") {
         // Single-parameter syntax - everything is on this "options" param
         options = readFunction;
         readFunction = options["read"];
     } else {
         // Multi-parameter syntax - construct the options according to the params passed
         options = options || {};
-        if (!readFunction)
+        if (!readFunction) {
             readFunction = options["read"];
+        }
     }
-    if (typeof readFunction != "function")
+    if (typeof readFunction !== "function") {
         throw new Error("Pass a function that returns the value of the ko.computed");
+    }
 
     function addSubscriptionToDependency(subscribable) {
         _subscriptionsToDependencies.push(subscribable.subscribe(evaluatePossiblyAsync));
@@ -44,17 +47,19 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
     }
 
     function evaluatePossiblyAsync() {
-        var throttleEvaluationTimeout = dependentObservable['throttleEvaluation'];
+        var throttleEvaluationTimeout = dependentObservable["throttleEvaluation"];
         if (throttleEvaluationTimeout && throttleEvaluationTimeout >= 0) {
             clearTimeout(evaluationTimeoutInstance);
             evaluationTimeoutInstance = setTimeout(evaluateImmediate, throttleEvaluationTimeout);
-        } else
+        } else {
             evaluateImmediate();
+        }
     }
 
     function evaluateImmediate() {
-        if (_isBeingEvaluated) {
-            // If the evaluation of a ko.computed causes side effects, it's possible that it will trigger its own re-evaluation.
+        if (_holdEvaluation || _isBeingEvaluated) {
+            // First, we can specifically request to hold-off on evaluating the observable.
+            // Second, if the evaluation of a ko.computed causes side effects, it's possible that it will trigger its own re-evaluation.
             // This is not desirable (it's hard for a developer to realise a chain of dependencies might cause this, and they almost
             // certainly didn't intend infinite re-evaluations). So, for predictability, we simply prevent ko.computeds from causing
             // their own re-evaluation. Further discussion at https://github.com/SteveSanderson/knockout/pull/387
@@ -87,7 +92,7 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
                 dependentObservable["notifySubscribers"](_latestValue, "beforeChange");
 
                 _latestValue = newValue;
-                if (DEBUG) dependentObservable._latestValue = _latestValue;
+                if (DEBUG) { dependentObservable._latestValue = _latestValue; }
                 dependentObservable["notifySubscribers"](_latestValue);
             }
 
@@ -97,23 +102,33 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
             _isBeingEvaluated = false;
         }
 
-        if (!_subscriptionsToDependencies.length)
+        if (!_subscriptionsToDependencies.length) {
             dispose();
+        }
     }
 
     function dependentObservable() {
         if (arguments.length > 0) {
             if (typeof writeFunction === "function") {
                 // Writing a value
-                writeFunction.apply(evaluatorFunctionTarget, arguments);
+                try {
+                    _holdEvaluation = true;
+                    writeFunction.apply(evaluatorFunctionTarget, arguments);
+                } finally {
+                    _holdEvaluation = false;
+                }
+                if (_hasBeenEvaluated) {
+                    evaluateImmediate();
+                }
             } else {
                 throw new Error("Cannot write a value to a ko.computed unless you specify a 'write' option. If you wish to read the current value, don't pass any parameters.");
             }
             return this; // Permits chained assignments
         } else {
             // Reading the value
-            if (!_hasBeenEvaluated)
+            if (!_hasBeenEvaluated) {
                 evaluateImmediate();
+            }
             ko.dependencyDetection.registerDependency(dependentObservable);
             return _latestValue;
         }
