@@ -296,7 +296,7 @@ ko.utils = (function () {
         registerEventHandler: function (element, eventType, handler) {
             var _nestedRepeaters = [];
             var _disposeNestedRepeaters = function () {
-                ko.arrayForEach(_nestedRepeaters, function (nestedRepeater) {
+                ko.utils.arrayForEach(_nestedRepeaters, function (nestedRepeater) {
                     nestedRepeater['dispose']();
                 });
                 _nestedRepeaters = [];
@@ -312,15 +312,17 @@ ko.utils = (function () {
                 handlerRepeater['dispose']();
             });
             handler = (function (handler) {
-                _disposeNestedRepeaters();
-                ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
-                    _nestedRepeaters.push(nestedRepeater);
-                });
-                try {
-                    return handler.apply(this, arguments);
-                } finally {
-                    ko.dependencyDetection.popRepeater();
-                }
+                return function () {
+                    _disposeNestedRepeaters();
+                    ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
+                        _nestedRepeaters.push(nestedRepeater);
+                    });
+                    try {
+                        return handler.apply(this, arguments);
+                    } finally {
+                        ko.dependencyDetection.popRepeater();
+                    }
+                };
             }(handler));
             var mustUseAttachEvent = ieVersion && eventsThatMustBeRegisteredUsingAttachEvent[eventType];
             if (!mustUseAttachEvent && typeof jQuery != 'undefined') {
