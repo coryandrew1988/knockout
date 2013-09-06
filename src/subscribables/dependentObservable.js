@@ -36,7 +36,7 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
     function disposeNestedRepeaters() {
         // Dispose any subscriptions.
         ko.utils.arrayForEach(_nestedRepeaters, function (nestedRepeater) {
-            nestedRepeater.dispose();
+            nestedRepeater["dispose"]();
         });
         _nestedRepeaters = [];
     }
@@ -74,11 +74,11 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
             return;
         }
 
+        disposeSubscriptionsToDependencies();
+        disposeNestedRepeaters(); // TODO stop excess dispose calls
+
         _isBeingEvaluated = true;
         try {
-            disposeSubscriptionsToDependencies();
-            disposeNestedRepeaters(); // TODO stop excess dispose calls
-
             ko.dependencyDetection.begin(addSubscriptionToDependency);
             ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
                 _nestedRepeaters.push(nestedRepeater);
@@ -179,11 +179,11 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
     // (Note: "disposeWhenNodeIsRemoved" option both proactively disposes as soon as the node is removed using ko.removeNode(),
     // plus adds a "disposeWhen" callback that, on each evaluation, disposes if the node was removed by some other means.)
     if (disposeWhenNodeIsRemoved && isActive()) {
-        dispose = function() {
-            ko.utils.domNodeDisposal.removeDisposeCallback(disposeWhenNodeIsRemoved, dispose);
-            disposeSubscriptionsToDependencies();
+        var disposeOnNodeRemoval = function() {
+            ko.utils.domNodeDisposal.removeDisposeCallback(disposeWhenNodeIsRemoved, disposeOnNodeRemoval);
+            dispose();
         };
-        ko.utils.domNodeDisposal.addDisposeCallback(disposeWhenNodeIsRemoved, dispose);
+        ko.utils.domNodeDisposal.addDisposeCallback(disposeWhenNodeIsRemoved, disposeOnNodeRemoval);
         var existingDisposeWhenFunction = disposeWhen;
         disposeWhen = function () {
             return !ko.utils.domNodeIsAttachedToDocument(disposeWhenNodeIsRemoved) || existingDisposeWhenFunction();

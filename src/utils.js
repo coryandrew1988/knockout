@@ -1,3 +1,5 @@
+/*jshint sub: true, evil: true */
+
 ko.utils = (function () {
     var objectForEach = function(obj, action) {
         for (var prop in obj) {
@@ -28,10 +30,9 @@ ko.utils = (function () {
         var version = 3, div = document.createElement('div'), iElems = div.getElementsByTagName('i');
 
         // Keep constructing conditional HTML blocks until we hit one that resolves to an empty fragment
-        while (
-            div.innerHTML = '<!--[if gt IE ' + (++version) + ']><i></i><![endif]-->',
-            iElems[0]
-        ) {}
+        do {
+            div.innerHTML = '<!--[if gt IE ' + (++version) + ']><i></i><![endif]-->';
+        } while (iElems[0]);
         return version > 4 ? version : undefined;
     }());
     var isIe6 = ieVersion === 6,
@@ -185,9 +186,10 @@ ko.utils = (function () {
             if (nodesToReplaceArray.length > 0) {
                 var insertionPoint = nodesToReplaceArray[0];
                 var parent = insertionPoint.parentNode;
-                for (var i = 0, j = newNodesArray.length; i < j; i++)
+                var i, j;
+                for (i = 0, j = newNodesArray.length; i < j; i++)
                     parent.insertBefore(newNodesArray[i], insertionPoint);
-                for (var i = 0, j = nodesToReplaceArray.length; i < j; i++) {
+                for (i = 0, j = nodesToReplaceArray.length; i < j; i++) {
                     ko.removeNode(nodesToReplaceArray[i]);
                 }
             }
@@ -292,8 +294,36 @@ ko.utils = (function () {
         },
 
         registerEventHandler: function (element, eventType, handler) {
+            var _nestedRepeaters = [];
+            var _disposeNestedRepeaters = function () {
+                ko.arrayForEach(_nestedRepeaters, function (nestedRepeater) {
+                    nestedRepeater['dispose']();
+                });
+                _nestedRepeaters = [];
+            };
+            var handlerRepeater = {
+                dispose: function () {
+                    _disposeNestedRepeaters();
+                }
+            };
+            ko.exportProperty(handlerRepeater, 'dispose', handlerRepeater.dispose);
+            ko.dependencyDetection.registerRepeater(handlerRepeater);
+            ko.utils.domNodeDisposal.addDisposeCallback(element, function() {
+                handlerRepeater['dispose']();
+            });
+            handler = (function (handler) {
+                _disposeNestedRepeaters();
+                ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
+                    _nestedRepeaters.push(nestedRepeater);
+                });
+                try {
+                    return handler.apply(this, arguments);
+                } finally {
+                    ko.dependencyDetection.popRepeater();
+                }
+            }(handler));
             var mustUseAttachEvent = ieVersion && eventsThatMustBeRegisteredUsingAttachEvent[eventType];
-            if (!mustUseAttachEvent && typeof jQuery != "undefined") {
+            if (!mustUseAttachEvent && typeof jQuery != 'undefined') {
                 if (isClickOnCheckableElement(element, eventType)) {
                     // For click events on checkboxes, jQuery interferes with the event handling in an awkward way:
                     // it toggles the element checked state *after* the click event handlers run, whereas native
@@ -309,9 +339,9 @@ ko.utils = (function () {
                     };
                 }
                 jQuery(element)['bind'](eventType, handler);
-            } else if (!mustUseAttachEvent && typeof element.addEventListener == "function")
+            } else if (!mustUseAttachEvent && typeof element.addEventListener == "function") {
                 element.addEventListener(eventType, handler, false);
-            else if (typeof element.attachEvent != "undefined") {
+            } else if (typeof element.attachEvent != "undefined") {
                 var attachEventHandler = function (event) { handler.call(element, event); },
                     attachEventName = "on" + eventType;
                 element.attachEvent(attachEventName, attachEventHandler);
@@ -321,8 +351,9 @@ ko.utils = (function () {
                 ko.utils.domNodeDisposal.addDisposeCallback(element, function() {
                     element.detachEvent(attachEventName, attachEventHandler);
                 });
-            } else
+            } else {
                 throw new Error("Browser doesn't support addEventListener or attachEvent");
+            }
         },
 
         triggerEvent: function (element, eventType) {
@@ -441,7 +472,7 @@ ko.utils = (function () {
             var result = [];
             for (var i = 0, j = arrayLikeObject.length; i < j; i++) {
                 result.push(arrayLikeObject[i]);
-            };
+            }
             return result;
         },
 
@@ -451,14 +482,16 @@ ko.utils = (function () {
 
         getFormFields: function(form, fieldName) {
             var fields = ko.utils.makeArray(form.getElementsByTagName("input")).concat(ko.utils.makeArray(form.getElementsByTagName("textarea")));
-            var isMatchingField = (typeof fieldName == 'string')
-                ? function(field) { return field.name === fieldName }
-                : function(field) { return fieldName.test(field.name) }; // Treat fieldName as regex or object containing predicate
+            var isMatchingField = (typeof fieldName == 'string') ? (
+                function(field) { return field.name === fieldName; }
+            ) : (
+                function(field) { return fieldName.test(field.name); } // Treat fieldName as regex or object containing predicate
+            );
             var matches = [];
             for (var i = fields.length - 1; i >= 0; i--) {
                 if (isMatchingField(fields[i]))
                     matches.push(fields[i]);
-            };
+            }
             return matches;
         },
 
@@ -516,10 +549,14 @@ ko.utils = (function () {
                 form.appendChild(input);
             });
             document.body.appendChild(form);
-            options['submitter'] ? options['submitter'](form) : form.submit();
+            if (options['submitter']) {
+                options['submitter'](form);
+            } else {
+                form.submit();
+            }
             setTimeout(function () { form.parentNode.removeChild(form); }, 0);
         }
-    }
+    };
 }());
 
 ko.exportSymbol('utils', ko.utils);
@@ -551,7 +588,8 @@ if (!Function.prototype['bind']) {
     // Function.prototype.bind is a standard part of ECMAScript 5th Edition (December 2009, http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-262.pdf)
     // In case the browser doesn't implement it natively, provide a JavaScript implementation. This implementation is based on the one in prototype.js
     Function.prototype['bind'] = function (object) {
-        var originalFunction = this, args = Array.prototype.slice.call(arguments), object = args.shift();
+        var originalFunction = this, args = Array.prototype.slice.call(arguments);
+        object = args.shift();
         return function () {
             return originalFunction.apply(object, args.concat(Array.prototype.slice.call(arguments)));
         };

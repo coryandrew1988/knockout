@@ -15,10 +15,10 @@ ko.subscription.prototype.dispose = function () {
 };
 ko.subscription.prototype.disposeNestedRepeaters = function () {
     // Dispose any subscriptions.
-    ko.utils.arrayForEach(this._nestedRepeaters, function (subcription) {
-        subcription.dispose();
+    ko.utils.arrayForEach(this._nestedRepeaters, function (nestedRepeater) {
+        nestedRepeater['dispose']();
     });
-    this.innerSubscriptions = [];
+    this._nestedRepeaters = [];
 };
 
 ko.subscribable = function () {
@@ -55,11 +55,11 @@ ko.subscribable['fn'] = {
                     // In case a subscription was disposed during the arrayForEach cycle, check
                     // for isDisposed on each subscription before invoking its callback
                     if (subscription && (subscription.isDisposed !== true)) {
+                        subscription.disposeNestedRepeaters();
+                        ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
+                            subscription._nestedRepeaters.push(nestedRepeater);
+                        });
                         try {
-                            subscription.disposeNestedRepeaters();
-                            ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
-                                subscription._nestedRepeaters.push(nestedRepeater);
-                            });
                             subscription.callback(valueToNotify);
                         } finally {
                             ko.dependencyDetection.popRepeater();
