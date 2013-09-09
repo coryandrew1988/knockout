@@ -5,7 +5,7 @@ ko.dependencyDetection = (function () {
 
     return {
         begin: function (callback) {
-            _frames.push({ callback: callback, distinctDependencies:[] });
+            _frames.push(callback && { callback: callback, distinctDependencies:[] });
         },
 
         end: function () {

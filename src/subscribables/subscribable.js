@@ -49,25 +49,32 @@ ko.subscribable['fn'] = {
 
     "notifySubscribers": function (valueToNotify, event) {
         event = event || defaultEvent;
-        if (this._subscriptions[event]) {
-            ko.dependencyDetection.ignore(function() {
-                ko.utils.arrayForEach(this._subscriptions[event].slice(0), function (subscription) {
+        if (this.hasSubscriptionsForEvent(event)) {
+            try {
+                ko.dependencyDetection.begin();
+                for (var a = this._subscriptions[event].slice(0), i = 0, subscription; subscription = a[i]; ++i) {
                     // In case a subscription was disposed during the arrayForEach cycle, check
                     // for isDisposed on each subscription before invoking its callback
                     if (subscription && (subscription.isDisposed !== true)) {
                         subscription.disposeNestedRepeaters();
-                        ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
-                            subscription._nestedRepeaters.push(nestedRepeater);
-                        });
                         try {
+                            ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
+                                subscription._nestedRepeaters.push(nestedRepeater);
+                            });
                             subscription.callback(valueToNotify);
                         } finally {
                             ko.dependencyDetection.popRepeater();
                         }
                     }
-                });
-            }, this);
+                }
+            } finally {
+                ko.dependencyDetection.end();
+            }
         }
+    },
+
+    hasSubscriptionsForEvent: function(event) {
+        return this._subscriptions[event] && this._subscriptions[event].length;
     },
 
     getSubscriptionsCount: function () {

@@ -93,11 +93,10 @@ describe('Templating', function() {
     });
 
     it('Should not be able to render a template until a template engine is provided', function () {
-        var threw = false;
-        ko.setTemplateEngine(undefined);
-        try { ko.renderTemplate("someTemplate", {}) }
-        catch (ex) { threw = true }
-        expect(threw).toEqual(true);
+        expect(function () {
+            ko.setTemplateEngine(undefined);
+            ko.renderTemplate("someTemplate", {});
+        }).toThrow();
     });
 
     it('Should be able to render a template into a given DOM element', function () {
@@ -373,6 +372,8 @@ describe('Templating', function() {
     });
 
     it('Data binding syntax should permit nested templates, and only bind inner templates once when using getBindingAccessors', function() {
+        this.restoreAfter(ko.bindingProvider, 'instance');
+
         // Will verify that bindings are applied only once for both inline (rewritten) bindings,
         // and external (non-rewritten) ones
         var originalBindingProvider = ko.bindingProvider.instance;
@@ -403,11 +404,11 @@ describe('Templating', function() {
         expect(model.numRewrittenBindings).toEqual(1);
         expect(model.numExternalBindings).toEqual(1);
         expect(testNode.childNodes[0]).toContainHtml("outer <div>inner via inline binding: <span>1</span>inner via external binding: <em>1</em></div>");
-
-        ko.bindingProvider.instance = originalBindingProvider;
     });
 
     it('Data binding syntax should permit nested templates, and only bind inner templates once when using getBindings', function() {
+        this.restoreAfter(ko.bindingProvider, 'instance');
+
         // Will verify that bindings are applied only once for both inline (rewritten) bindings,
         // and external (non-rewritten) ones. Because getBindings actually gets called twice, we need
         // to expect two calls (but still it's a single binding).
@@ -434,8 +435,6 @@ describe('Templating', function() {
         expect(model.numRewrittenBindings).toEqual(1);
         expect(model.numExternalBindings).toEqual(2);
         expect(testNode.childNodes[0]).toContainHtml("outer <div>inner via inline binding: <span>1</span>inner via external binding: <em>2</em></div>");
-
-        ko.bindingProvider.instance = originalBindingProvider;
     });
 
     describe('Data binding \'foreach\' option', function() {
@@ -870,14 +869,9 @@ describe('Templating', function() {
         }));
         testNode.innerHTML = "<div data-bind='template: { name: \"myTemplate\" }'></div>";
 
-        var didThrow = false;
-        try {
+        expect(function () {
             ko.applyBindings({ someData: { childProp: 'abc' } }, testNode);
-        } catch(ex) {
-            didThrow = true;
-            expect(ex.message).toEqual("This template engine does not support anonymous templates nested within its templates");
-        }
-        expect(didThrow).toEqual(true);
+        }).toThrowContaining("This template engine does not support anonymous templates nested within its templates");
     });
 
     it('Should not be allowed to rewrite templates that embed control flow bindings', function() {
@@ -886,15 +880,10 @@ describe('Templating', function() {
             ko.setTemplateEngine(new dummyTemplateEngine({ myTemplate: "<div data-bind='" + bindingName + ": \"SomeValue\"'>Hello</div>" }));
             testNode.innerHTML = "<div data-bind='template: { name: \"myTemplate\" }'></div>";
 
-            var didThrow = false;
             ko.utils.domData.clear(testNode);
-            try { ko.applyBindings({ someData: { childProp: 'abc' } }, testNode) }
-            catch (ex) {
-                didThrow = true;
-                expect(ex.message).toMatch("This template engine does not support");
-            }
-            if (!didThrow)
-                throw new Error("Did not prevent use of " + bindingName);
+            expect(function () {
+                ko.applyBindings({ someData: { childProp: 'abc' } }, testNode);
+            }).toThrowContaining("This template engine does not support");
         });
     });
 
@@ -937,6 +926,8 @@ describe('Templating', function() {
     });
 
     it('Should be possible to combine template rewriting, foreach, and a node preprocessor', function() {
+        this.restoreAfter(ko.bindingProvider, 'instance');
+
         // This spec verifies that the use of fixUpContinuousNodeArray in templating.js correctly handles the scenario
         // where a memoized comment node is the first node outputted by 'foreach', and it gets removed by unmemoization.
         // In this case we rely on fixUpContinuousNodeArray to work out which remaining nodes correspond to the 'foreach'
@@ -952,20 +943,16 @@ describe('Templating', function() {
             return [node];
         };
 
-        try {
-            ko.setTemplateEngine(new dummyTemplateEngine({}));
-            testNode.innerHTML = "<div data-bind='template: { foreach: items }'><button data-bind='text: $data'></button> OK. </div>";
-            var items = ko.observableArray(['Alpha', 'Beta']);
-            ko.applyBindings({ items: items }, testNode);
-            expect(testNode).toContainText('Alpha OK. Beta OK. ');
+        ko.setTemplateEngine(new dummyTemplateEngine({}));
+        testNode.innerHTML = "<div data-bind='template: { foreach: items }'><button data-bind='text: $data'></button> OK. </div>";
+        var items = ko.observableArray(['Alpha', 'Beta']);
+        ko.applyBindings({ items: items }, testNode);
+        expect(testNode).toContainText('Alpha OK. Beta OK. ');
 
-            // Check that 'foreach' knows which set of elements to remove when an item vanishes from the model array,
-            // even though the original 'foreach' output's first node, the memo comment, was removed during unmemoization.
-            items.shift();
-            expect(testNode).toContainText('Beta OK. ');
-        } finally {
-            ko.bindingProvider.instance = originalBindingProvider;
-        }
+        // Check that 'foreach' knows which set of elements to remove when an item vanishes from the model array,
+        // even though the original 'foreach' output's first node, the memo comment, was removed during unmemoization.
+        items.shift();
+        expect(testNode).toContainText('Beta OK. ');
     });
 
     it('Should not throw errors if trying to apply text to a non-rendered node', function() {

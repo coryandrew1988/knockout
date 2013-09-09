@@ -84,18 +84,16 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
                 _nestedRepeaters.push(nestedRepeater);
             });
 
-            var newValue = readFunction.call(evaluatorFunctionTarget);
+            var newValue = evaluatorFunctionTarget ? readFunction.call(evaluatorFunctionTarget) : readFunction();
 
             _hasBeenEvaluated = true;
 
-            if (_latestValue !== newValue || options["alwaysNotify"]) {
+            if (!dependentObservable['equalityComparer'] || !dependentObservable['equalityComparer'](_latestValue, newValue)) {
                 dependentObservable["notifySubscribers"](_latestValue, "beforeChange");
-
                 _latestValue = newValue;
                 if (DEBUG) { dependentObservable._latestValue = _latestValue; }
                 dependentObservable["notifySubscribers"](_latestValue);
             }
-
         } finally {
             ko.dependencyDetection.popRepeater();
             ko.dependencyDetection.end();
@@ -200,7 +198,9 @@ ko.isComputed = function(instance) {
 var protoProp = ko.observable.protoProperty; // == "__ko_proto__"
 ko.dependentObservable[protoProp] = ko.observable;
 
-ko.dependentObservable['fn'] = {};
+ko.dependentObservable['fn'] = {
+    "equalityComparer": valuesArePrimitiveAndEqual
+};
 ko.dependentObservable['fn'][protoProp] = ko.dependentObservable;
 
 ko.exportSymbol('dependentObservable', ko.dependentObservable);

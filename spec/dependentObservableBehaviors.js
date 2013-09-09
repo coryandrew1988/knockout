@@ -378,14 +378,11 @@ describe('Dependent Observable', function() {
         // Initially the computed value is true (executed sucessfully -> same value as observable)
         expect(computed()).toEqual(true);
 
-        var didThrow = false;
-        try {
+        expect(function () {
             // Update observable to cause computed to throw an exception
             observable(false);
-        } catch(e) {
-            didThrow = true;
-        }
-        expect(didThrow).toEqual(true);
+        }).toThrow();
+
         // The value of the computed is now undefined, although currently it keeps the previous value
         expect(computed()).toEqual(true);
 
@@ -393,4 +390,40 @@ describe('Dependent Observable', function() {
         observable(1);
         expect(computed()).toEqual(1);
     });
-})
+
+    it('Should expose a "notify" extender that can configure a computed to notify on all changes', function() {
+        var notifiedValues = [];
+        var observable = new ko.observable(1);
+        var computed = new ko.computed(function () { return observable(); });
+        computed.subscribe(function (value) { notifiedValues.push(value); });
+
+        expect(notifiedValues).toEqual([]);
+
+        // Trigger update without changing value; the computed will not notify the change (default behavior)
+        observable.valueHasMutated();
+        expect(notifiedValues).toEqual([]);
+
+        // Set the computed to notify always
+        computed.extend({ notify: 'always' });
+        observable.valueHasMutated();
+        expect(notifiedValues).toEqual([1]);
+    });
+
+    // Borrowed from haberman/knockout (see knockout/knockout#359)
+    it('Should allow long chains without overflowing the stack', function() {
+        // maximum with previous code (when running this test only): Chrome 28: 1310, IE 10: 2200; FF 23: 103
+        // maximum with changed code: Chrome 28: 2620, +100%, IE 10: 4900, +122%; FF 23: 267, +160%
+        var depth = 200;
+        var first = ko.observable(0);
+        var last = first;
+        for (var i = 0; i < depth; i++) {
+            (function() {
+                var l = last;
+                last = ko.computed(function() { return l() + 1; });
+            })();
+        }
+        var all = ko.computed(function() { return last() + first(); });
+        first(1);
+        expect(all()).toEqual(depth+2);
+    });
+});
