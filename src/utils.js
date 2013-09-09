@@ -314,10 +314,10 @@ ko.utils = (function () {
             handler = (function (handler) {
                 return function () {
                     _disposeNestedRepeaters();
-                    ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
-                        _nestedRepeaters.push(nestedRepeater);
-                    });
                     try {
+                        ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
+                            _nestedRepeaters.push(nestedRepeater);
+                        });
                         return handler.apply(this, arguments);
                     } finally {
                         ko.dependencyDetection.popRepeater();

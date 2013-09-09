@@ -32,6 +32,7 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
         _subscriptionsToDependencies = [];
     }
 
+    var _manageNestedRepeaters = options.manageNestedRepeaters || false;
     var _nestedRepeaters = [];
     function disposeNestedRepeaters() {
         // Dispose any subscriptions.
@@ -40,6 +41,9 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
         });
         _nestedRepeaters = [];
     }
+    var addNestedRepeater = _manageNestedRepeaters ? function (nestedRepeater) {
+        _nestedRepeaters.push(nestedRepeater);
+    } : null;
 
     function dispose() {
         disposeSubscriptionsToDependencies();
@@ -75,14 +79,14 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
         }
 
         disposeSubscriptionsToDependencies();
-        disposeNestedRepeaters(); // TODO stop excess dispose calls
+        if (_manageNestedRepeaters) {
+            disposeNestedRepeaters(); // TODO stop excess dispose calls
+        }
 
         _isBeingEvaluated = true;
         try {
             ko.dependencyDetection.begin(addSubscriptionToDependency);
-            ko.dependencyDetection.pushRepeater(function (nestedRepeater) {
-                _nestedRepeaters.push(nestedRepeater);
-            });
+            ko.dependencyDetection.pushRepeater(addNestedRepeater);
 
             var newValue = evaluatorFunctionTarget ? readFunction.call(evaluatorFunctionTarget) : readFunction();
 
