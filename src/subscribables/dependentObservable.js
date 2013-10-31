@@ -103,10 +103,6 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
             ko.dependencyDetection.end();
             _isBeingEvaluated = false;
         }
-
-        if (!_subscriptionsToDependencies.length) {
-            dispose();
-        }
     }
 
     function dependentObservable() {
