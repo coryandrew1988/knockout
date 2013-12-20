@@ -375,7 +375,7 @@ describe('Dependent Observable', function() {
                 }
             });
 
-        // Initially the computed value is true (executed sucessfully -> same value as observable)
+        // Initially the computed value is true (executed successfully -> same value as observable)
         expect(computed()).toEqual(true);
 
         expect(function () {

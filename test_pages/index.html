@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>KO Test Pages</title>
+    </head>
+    <body>
+        <h2>KO Test Pages</h2>
+
+        <ul>
+            <!-- ko template: { name: 'multiplierTemplate', data: root } --><!-- /ko -->
+        </ul>
+
+        <div data-bind="text: aa.value() * ab.value()"></div>
+
+        <script id="multiplierTemplate" type="text/html">
+            <li>
+                <input type="checkbox" data-bind="checked: isOn" />
+                <!-- ko if: isOn() -->
+                    <span data-bind="text: name() + ' is ' + value()"></span>
+                    <span> with a factor of </span>
+                    <input
+                        type="text"
+                        data-bind="value: factorString, valueUpdate: 'afterkeydown'"
+                    />
+                <!-- /ko -->
+                <ul>
+                    <!-- ko template: {
+                        name: 'multiplierTemplate',
+                        foreach: subMultipliers()
+                    } --><!-- /ko -->
+                </ul>
+            </li>
+        </script>
+
+        <script type="text/javascript" src="../build/output/knockout-latest.debug.js"></script>
+        <script type="text/javascript">
+            (function (global) {
+                var createIntStringComputed = function (obs) {
+                    return ko.computed({
+                        eager: false,
+                        read: function () {
+                            return String(obs());
+                        },
+                        write: function (value) {
+                            obs(parseInt(value, 10));
+                        }
+                    });
+                };
+
+                var createMultiplierViewModel = function (
+                    rootModel, name, initialFactor, subscribeOptions
+                ) {
+                    var viewModel = {};
+                    var rootModel = rootModel || {
+                        value: function () { return 1; }
+                    };
+
+                    viewModel.name = ko.observable(name);
+                    viewModel.isOn = ko.observable(true);
+                    viewModel.factor = ko.observable(initialFactor);
+                    viewModel.factorString = createIntStringComputed(viewModel.factor);
+                    viewModel.value = ko.computed({
+                        eager: false,
+                        read: function () {
+                            return rootModel.value() * viewModel.factor();
+                        }
+                    });
+                    viewModel.value.subscribe(function (value) {
+                        console.log(viewModel.name() + ' is ' + value);
+                    }, null, null, subscribeOptions);
+                    viewModel.subMultipliers = ko.observableArray([]);
+
+                    return viewModel;
+                };
+
+                var viewModels = global.viewModels = {};
+
+                viewModels.root = createMultiplierViewModel(null, '!!! root', 1, { eager: false });
+                viewModels.root.subMultipliers([
+                    viewModels.a = createMultiplierViewModel(viewModels.root, 'a', 1, { eager: false }),
+                    viewModels.b = createMultiplierViewModel(viewModels.root, 'b', 2, { eager: false }),
+                    viewModels.c = createMultiplierViewModel(viewModels.root, 'c', 3, { eager: false }),
+                    viewModels.d = createMultiplierViewModel(viewModels.root, 'd', 4, { eager: false }),
+                    viewModels.e = createMultiplierViewModel(viewModels.root, 'e', 5, { eager: false }),
+                    viewModels.f = createMultiplierViewModel(viewModels.root, 'f', 6, { eager: false }),
+                    viewModels.g = createMultiplierViewModel(viewModels.root, 'g', 7, { eager: true })
+                ]);
+
+                viewModels.a.subMultipliers([
+                    viewModels.aa = createMultiplierViewModel(viewModels.a, 'aa', 1, { eager: false }),
+                    viewModels.ab = createMultiplierViewModel(viewModels.a, 'ab', 2, { eager: false })
+                ]);
+
+                ko.applyBindings(viewModels);
+            }(this));
+        </script>
+    </body>
+</html>
