@@ -2,7 +2,7 @@
 /*global ko, DEBUG, valuesArePrimitiveAndEqual */
 ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunctionTarget, options) {
     var _latestValue;
-    var _hasBeenEvaluated = false;
+    var _needsEvaluation = true;
     var _isBeingEvaluated = false;
     var _suppressDisposalUntilDisposeWhenReturnsFalse = false;
     var _holdEvaluation = false;
@@ -67,6 +67,7 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
         ko.utils.objectForEach(subscriptionsToDependencies, function (id, subscription) {
             subscription.dispose();
         });
+        _needsEvaluation = false;
     };
 
     var dispose = function () {
@@ -84,6 +85,8 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
             if (throttleEvaluationTimeout && throttleEvaluationTimeout >= 0) {
                 clearTimeout(evaluationTimeoutInstance);
                 evaluationTimeoutInstance = setTimeout(evaluateImmediate, throttleEvaluationTimeout);
+            } else if (dependentObservable._evalRateLimited) {
+                dependentObservable._evalRateLimited();
             } else {
                 evaluateImmediate();
             }
@@ -106,7 +109,6 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
             // See comment below about _suppressDisposalUntilDisposeWhenReturnsFalse
             if (!_suppressDisposalUntilDisposeWhenReturnsFalse) {
                 dispose();
-                _hasBeenEvaluated = true;
                 return;
             }
         } else {
@@ -156,15 +158,21 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
                     });
                 }
 
-                _hasBeenEvaluated = true;
+                _needsEvaluation = false;
                 _isOutdated = false;
             }
 
-            if (!dependentObservable['equalityComparer'] || !dependentObservable['equalityComparer'](_latestValue, newValue)) {
+            if (dependentObservable.isDifferent(_latestValue, newValue)) {
                 dependentObservable['notifySubscribers'](_latestValue, 'beforeChange');
                 _latestValue = newValue;
                 if (DEBUG) { dependentObservable._latestValue = _latestValue; }
-                dependentObservable['notifySubscribers'](_latestValue);
+
+                // If rate-limited, the notification will happen within the limit function. Otherwise,
+                // notify as soon as the value changes. Check specifically for the throttle setting since
+                // it overrides rateLimit.
+                if (!dependentObservable._evalRateLimited || dependentObservable['throttleEvaluation']) {
+                    dependentObservable['notifySubscribers'](_latestValue);
+                }
             }
         } finally {
             _isBeingEvaluated = false;
@@ -205,7 +213,7 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
     };
 
     var isActive = function () {
-        return !_hasBeenEvaluated || _dependenciesCount > 0;
+        return _needsEvaluation || _dependenciesCount > 0;
     };
 
     var disposeWhenNodeIsRemoved = options['disposeWhenNodeIsRemoved'] || options.disposeWhenNodeIsRemoved || null;
@@ -235,6 +243,21 @@ ko.dependentObservable = function (evaluatorFunctionOrOptions, evaluatorFunction
         if (_isOutdated) {
             evaluateImmediate();
         }
+    };
+
+    // Replace the limit function with one that delays evaluation as well.
+    var originalLimit = dependentObservable.limit;
+    dependentObservable.limit = function(limitFunction) {
+        originalLimit.call(dependentObservable, limitFunction);
+        dependentObservable._evalRateLimited = function() {
+            dependentObservable._rateLimitedBeforeChange(_latestValue);
+
+            _needsEvaluation = true;    // Mark as dirty
+
+            // Pass the observable to the rate-limit code, which will access it when
+            // it's time to do the notification.
+            dependentObservable._rateLimitedChange(dependentObservable);
+        };
     };
 
     ko.exportProperty(dependentObservable, 'peek', dependentObservable.peek);
