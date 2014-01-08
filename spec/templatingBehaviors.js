@@ -195,6 +195,13 @@ describe('Templating', function() {
         expect(testNode.childNodes[0].innerHTML).toEqual("template output");
     });
 
+    it('Should remove existing content when rendering a template using data-bind syntax', function () {
+        ko.setTemplateEngine(new dummyTemplateEngine({ someTemplate: "template output" }));
+        testNode.innerHTML = "<div data-bind='template:\"someTemplate\"'><span>existing content</span></div>";
+        ko.applyBindings(null, testNode);
+        expect(testNode.childNodes[0].innerHTML).toEqual("template output");
+    });
+
     it('Should be able to tell data-bind syntax which object to pass as data for the template (otherwise, uses viewModel)', function () {
         ko.setTemplateEngine(new dummyTemplateEngine({ someTemplate: "result = [js: childProp]" }));
         testNode.innerHTML = "<div data-bind='template: { name: \"someTemplate\", data: someProp }'></div>";
@@ -438,6 +445,14 @@ describe('Templating', function() {
     });
 
     describe('Data binding \'foreach\' option', function() {
+        it('Should remove existing content', function () {
+            ko.setTemplateEngine(new dummyTemplateEngine({ itemTemplate: "<span>template content</span>" }));
+            testNode.innerHTML = "<div data-bind='template: { name: \"itemTemplate\", foreach: myCollection }'><span>existing content</span></div>";
+
+            ko.applyBindings({ myCollection: [ {} ] }, testNode);
+            expect(testNode.childNodes[0]).toContainHtml("<span>template content</span>");
+        });
+
         it('Should render for each item in an array but doesn\'t rerender everything if you push or splice', function () {
             var myArray = new ko.observableArray([{ personName: "Bob" }, { personName: "Frank"}]);
             ko.setTemplateEngine(new dummyTemplateEngine({ itemTemplate: "<div>The item is [js: personName]</div>" }));
@@ -677,8 +692,8 @@ describe('Templating', function() {
         it('Should update all child contexts and bindings when used with a top-level observable view model', function() {
             var myVm = ko.observable({items: ['A', 'B', 'C'], itemValues: { 'A': [1, 2, 3], 'B': [4, 5, 6], 'C': [7, 8, 9] }});
             var engine = new dummyTemplateEngine({
-                itemTemplate: "The <span data-bind='text: $index'></span> item <span data-bind='text: $data'></span> has <div data-bind='template: { name: \"valueTemplate\", foreach: $root.itemValues[$data] }'></div> ",
-                valueTemplate: "<span data-bind='text: $index'></span>.<span data-bind='text: $data'></span>,"
+                itemTemplate: "<span>The <span data-bind='text: $index'>&nbsp;</span> item <span data-bind='text: $data'>&nbsp;</span> has <span data-bind='template: { name: \"valueTemplate\", foreach: $root.itemValues[$data] }'>&nbsp;</span> </span>",
+                valueTemplate: "<span data-bind='text: $index'>&nbsp;</span>.<span data-bind='text: $data'>&nbsp;</span>,"
             });
             engine.createJavaScriptEvaluatorBlock = function (script) { return "[[js:" + script + "]]"; };  // because we're using a binding with brackets
             ko.setTemplateEngine(engine);
@@ -970,5 +985,21 @@ describe('Templating', function() {
         ko.applyBindings(null, testNode);
         // Since the actual template markup was invalid, we don't really care what the
         // resulting DOM looks like. We are only verifying there were no exceptions.
+    });
+
+    it('Should be possible to render a template to a document fragment', function() {
+        // Represents https://github.com/knockout/knockout/issues/1162
+        // This was failing on IE8
+        ko.setTemplateEngine(new dummyTemplateEngine({
+            myTemplate: "<p>myval: [js: myVal]</p>" // The whitespace after the closing span is what triggers the strange HTML parsing
+        }));
+
+        var testDocFrag = document.createDocumentFragment();
+        ko.renderTemplate("myTemplate", { myVal: 123 }, null, testDocFrag);
+
+        // Can't use .toContainHtml directly on doc frags, so check DOM structure manually
+        expect(testDocFrag.childNodes.length).toEqual(1);
+        expect(testDocFrag.childNodes[0].tagName).toEqual("P");
+        expect(testDocFrag.childNodes[0]).toContainHtml("myval: 123");
     });
 })

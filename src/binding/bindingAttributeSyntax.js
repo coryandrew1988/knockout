@@ -41,7 +41,7 @@
                 // Because the above copy overwrites our own properties, we need to reset them.
                 // During the first execution, "subscribable" isn't set, so don't bother doing the update then.
                 if (subscribable) {
-                    self['$dataFn'] = self._subscribable = subscribable;
+                    self._subscribable = subscribable;
                 }
             } else {
                 self['$parents'] = [];
@@ -52,6 +52,7 @@
                 // See https://github.com/SteveSanderson/knockout/issues/490
                 self['ko'] = ko;
             }
+            self['$rawData'] = dataItemOrAccessor;
             self['$data'] = dataItem;
             if (dataItemAlias)
                 self[dataItemAlias] = dataItem;
@@ -65,20 +66,20 @@
             return self['$data'];
         }
         function disposeWhen() {
-            return !ko.utils.anyDomNodeIsAttachedToDocument(nodes);
+            return nodes && !ko.utils.anyDomNodeIsAttachedToDocument(nodes);
         }
 
         var self = this,
             isFunc = typeof(dataItemOrAccessor) == "function",
-            nodes = [],
-            subscribable = ko.dependentObservable(updateContext, null, { disposeWhen: disposeWhen });
+            nodes,
+            subscribable = ko.dependentObservable(updateContext, null, { disposeWhen: disposeWhen, disposeWhenNodeIsRemoved: true });
 
         // At this point, the binding context has been initialized, and the "subscribable" computed observable is
         // subscribed to any observables that were accessed in the process. If there is nothing to track, the
         // computed will be inactive, and we can safely throw it away. If it's active, the computed is stored in
         // the context object.
         if (subscribable.isActive()) {
-            self['$dataFn'] = self._subscribable = subscribable;
+            self._subscribable = subscribable;
 
             // Always notify because even if the model ($data) hasn't changed, other context properties might have changed
             subscribable['equalityComparer'] = null;
@@ -89,7 +90,7 @@
             // the context is attached to, and dispose the computed when all of those nodes have been cleaned.
 
             // Add properties to *subscribable* instead of *self* because any properties added to *self* may be overwritten on updates
-            subscribable._nodes = nodes;
+            nodes = [];
             subscribable._addNode = function(node) {
                 nodes.push(node);
                 ko.utils.domNodeDisposal.addDisposeCallback(node, function(node) {
@@ -100,8 +101,6 @@
                     }
                 });
             };
-        } else {
-            self['$dataFn'] = function() { return self['$data']; }
         }
     }
 
@@ -126,7 +125,7 @@
     // Similarly to "child" contexts, provide a function here to make sure that the correct values are set
     // when an observable view model is updated.
     ko.bindingContext.prototype['extend'] = function(properties) {
-        return new ko.bindingContext(this['$dataFn'], this, null, function(self) {
+        return new ko.bindingContext(this['$rawData'], this, null, function(self) {
             ko.utils.extend(self, typeof(properties) == "function" ? properties() : properties);
         });
     };
@@ -290,22 +289,26 @@
             var provider = ko.bindingProvider['instance'],
                 getBindings = provider['getBindingAccessors'] || getBindingsAndMakeAccessors;
 
-            // When an obsevable view model is used, the binding context will expose an observable _subscribable value.
-            // Get the binding from the provider within a computed observable so that we can update the bindings whenever
-            // the binding context is updated.
-            var bindingsUpdater = ko.dependentObservable(
-                function() {
-                    bindings = sourceBindings ? sourceBindings(bindingContext, node) : getBindings.call(provider, node, bindingContext);
-                    // Register a dependency on the binding context
-                    if (bindings && bindingContext._subscribable)
-                        bindingContext._subscribable();
-                    return bindings;
-                },
-                null, { disposeWhenNodeIsRemoved: node }
-            );
+            if (sourceBindings || bindingContext._subscribable) {
+                // When an obsevable view model is used, the binding context will expose an observable _subscribable value.
+                // Get the binding from the provider within a computed observable so that we can update the bindings whenever
+                // the binding context is updated.
+                var bindingsUpdater = ko.dependentObservable(
+                    function() {
+                        bindings = sourceBindings ? sourceBindings(bindingContext, node) : getBindings.call(provider, node, bindingContext);
+                        // Register a dependency on the binding context
+                        if (bindings && bindingContext._subscribable)
+                            bindingContext._subscribable();
+                        return bindings;
+                    },
+                    null, { disposeWhenNodeIsRemoved: node }
+                );
 
-            if (!bindings || !bindingsUpdater.isActive())
-                bindingsUpdater = null;
+                if (!bindings || !bindingsUpdater.isActive())
+                    bindingsUpdater = null;
+            } else {
+                bindings = ko.dependencyDetection.ignore(getBindings, provider, [node, bindingContext]);
+            }
         }
 
         var bindingHandlerThatControlsDescendantBindings;
@@ -339,8 +342,11 @@
 
             // Go through the sorted bindings, calling init and update for each
             ko.utils.arrayForEach(orderedBindings, function(bindingKeyAndHandler) {
-                var bindingKey = bindingKeyAndHandler.key,
-                    bindingHandler = bindingKeyAndHandler.handler;
+                // Note that topologicalSortBindings has already filtered out any nonexistent binding handlers,
+                // so bindingKeyAndHandler.handler will always be nonnull.
+                var handlerInitFn = bindingKeyAndHandler.handler["init"],
+                    handlerUpdateFn = bindingKeyAndHandler.handler["update"],
+                    bindingKey = bindingKeyAndHandler.key;
 
                 if (node.nodeType === 8) {
                     validateThatBindingIsAllowedForVirtualElements(bindingKey);
@@ -348,9 +354,8 @@
 
                 try {
                     // Run init, ignoring any dependencies
-                    ko.dependencyDetection.ignore(function() {
-                        var handlerInitFn = bindingHandler["init"];
-                        if (typeof handlerInitFn == "function") {
+                    if (typeof handlerInitFn == "function") {
+                        ko.dependencyDetection.ignore(function() {
                             var initResult = handlerInitFn(node, getValueAccessor(bindingKey), allBindings, bindingContext['$data'], bindingContext);
 
                             // If this binding handler claims to control descendant bindings, make a note of this
@@ -359,20 +364,19 @@
                                     throw new Error("Multiple bindings (" + bindingHandlerThatControlsDescendantBindings + " and " + bindingKey + ") are trying to control descendant bindings of the same element. You cannot use these bindings together on the same element.");
                                 bindingHandlerThatControlsDescendantBindings = bindingKey;
                             }
-                        }
-                    });
+                        });
+                    }
 
                     // Run update in its own computed wrapper
-                    ko.dependentObservable(
-                        function() {
-                            var handlerUpdateFn = bindingHandler["update"];
-                            if (typeof handlerUpdateFn == "function") {
+                    if (typeof handlerUpdateFn == "function") {
+                        ko.dependentObservable(
+                            function() {
                                 handlerUpdateFn(node, getValueAccessor(bindingKey), allBindings, bindingContext['$data'], bindingContext);
-                            }
-                        },
-                        null,
-                        { disposeWhenNodeIsRemoved: node }
-                    );
+                            },
+                            null,
+                            { disposeWhenNodeIsRemoved: node }
+                        );
+                    }
                 } catch (ex) {
                     ex.message = "Unable to process binding \"" + bindingKey + ": " + bindings[bindingKey] + "\"\nMessage: " + ex.message;
                     throw ex;
@@ -419,6 +423,11 @@
     };
 
     ko.applyBindings = function (viewModelOrBindingContext, rootNode) {
+        // If jQuery is loaded after Knockout, we won't initially have access to it. So save it here.
+        if (!jQuery && window['jQuery']) {
+            jQuery = window['jQuery'];
+        }
+
         if (rootNode && (rootNode.nodeType !== 1) && (rootNode.nodeType !== 8))
             throw new Error("ko.applyBindings: first parameter should be your view model; second parameter should be a DOM node");
         rootNode = rootNode || window.document.body; // Make "rootNode" parameter optional

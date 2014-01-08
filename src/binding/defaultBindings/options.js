@@ -13,7 +13,7 @@ ko.bindingHandlers['options'] = {
     },
     'update': function (element, valueAccessor, allBindings) {
         function selectedOptions() {
-            return element['selectedOptions'] || ko.utils.arrayFilter(element.options, function (node) { return node.selected; });
+            return ko.utils.arrayFilter(element.options, function (node) { return node.selected; });
         }
 
         var selectWasPreviouslyEmpty = element.length == 0;
@@ -21,8 +21,10 @@ ko.bindingHandlers['options'] = {
 
         var unwrappedArray = ko.utils.unwrapObservable(valueAccessor());
         var includeDestroyed = allBindings.get('optionsIncludeDestroyed');
+        var arrayToDomNodeChildrenOptions = {};
         var captionPlaceholder = {};
         var captionValue;
+
         var previousSelectedValues;
         if (element.multiple) {
             previousSelectedValues = ko.utils.arrayMap(selectedOptions(), ko.selectExtensions.readValue);
@@ -72,9 +74,9 @@ ko.bindingHandlers['options'] = {
                 previousSelectedValues = oldOptions[0].selected ? [ ko.selectExtensions.readValue(oldOptions[0]) ] : [];
                 itemUpdate = true;
             }
-            var option = document.createElement("option");
+            var option = element.ownerDocument.createElement("option");
             if (arrayEntry === captionPlaceholder) {
-                ko.utils.setHtml(option, allBindings.get('optionsCaption'));
+                ko.utils.setTextContent(option, allBindings.get('optionsCaption'));
                 ko.selectExtensions.writeValue(option, undefined);
             } else {
                 // Apply a value to the option element
@@ -86,6 +88,15 @@ ko.bindingHandlers['options'] = {
                 ko.utils.setTextContent(option, optionText);
             }
             return [option];
+        }
+
+        // By using a beforeRemove callback, we delay the removal until after new items are added. This fixes a selection
+        // problem in IE<=8. See https://github.com/knockout/knockout/issues/1208
+        if (ko.utils.ieVersion <= 8) {
+            arrayToDomNodeChildrenOptions['beforeRemove'] =
+                function (option) {
+                    element.removeChild(option);
+                };
         }
 
         function setSelectionCallback(arrayEntry, newOptions) {
@@ -109,7 +120,7 @@ ko.bindingHandlers['options'] = {
             }
         }
 
-        ko.utils.setDomNodeChildrenFromArrayMapping(element, filteredArray, optionForArrayItem, null, callback);
+        ko.utils.setDomNodeChildrenFromArrayMapping(element, filteredArray, optionForArrayItem, arrayToDomNodeChildrenOptions, callback);
 
         // Determine if the selection has changed as a result of updating the options list
         var selectionChanged;

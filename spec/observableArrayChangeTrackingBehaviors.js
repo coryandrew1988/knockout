@@ -76,7 +76,8 @@ describe('Observable Array change tracking', function() {
 
     it('Skips the diff algorithm when the array mutation is a known operation', function() {
         captureCompareArraysCalls(function(callLog) {
-            var myArray = ko.observableArray(['Alpha', 'Beta', 'Gamma']);
+            var myArray = ko.observableArray(['Alpha', 'Beta', 'Gamma']),
+                browserSupportsSpliceWithoutDeletionCount = [1, 2].splice(1).length === 1;
 
             // Push
             testKnownOperation(myArray, 'push', {
@@ -99,7 +100,7 @@ describe('Observable Array change tracking', function() {
 
             // Pop empty array
             testKnownOperation(ko.observableArray([]), 'pop', {
-                args: [], result: [], changes: []
+                args: [], result: [], changes: undefined
             });
 
             // Shift
@@ -113,7 +114,7 @@ describe('Observable Array change tracking', function() {
 
             // Shift empty array
             testKnownOperation(ko.observableArray([]), 'shift', {
-                args: [], result: [], changes: []
+                args: [], result: [], changes: undefined
             });
 
             // Unshift
@@ -140,14 +141,20 @@ describe('Observable Array change tracking', function() {
             });
 
             // Splice - no 'deletion count' supplied (deletes everything after start index)
-            testKnownOperation(myArray, 'splice', {
-                args: [2],
-                result: ['First', 'Second'],
-                changes: [
-                    { status: 'deleted', value: 'Another', index: 2 },
-                    { status: 'deleted', value: 'YetAnother', index: 3 }
-                ]
-            });
+            if (browserSupportsSpliceWithoutDeletionCount) {
+                testKnownOperation(myArray, 'splice', {
+                    args: [2],
+                    result: ['First', 'Second'],
+                    changes: [
+                        { status: 'deleted', value: 'Another', index: 2 },
+                        { status: 'deleted', value: 'YetAnother', index: 3 }
+                    ]
+                });
+            } else {
+                // Browser doesn't support that underlying operation, so just set the state
+                // to what it needs to be to run the remaining tests
+                myArray(['First', 'Second']);
+            }
 
             // Splice - deletion end index out of bounds
             testKnownOperation(myArray, 'splice', {
@@ -179,6 +186,22 @@ describe('Observable Array change tracking', function() {
                     { status: 'deleted', value: 'Y', index: 2 },
                     { status: 'added', value: 'Another', index: 3 },
                     { status: 'deleted', value: 'New1', index: 3 }
+                ]
+            });
+
+            // Slice - swapping items should find moves
+            // NOTE: ko.utils.compareArrays will report the change list as
+            //     { status: 'deleted', value: 'First', index: 0, moved: 1 },
+            //     { status: 'added', value: 'First', index: 1, moved: 0 }
+            // which is also valid.
+            testKnownOperation(myArray, 'splice', {
+                args: [0, 2, 'X', 'First'],
+                result: ['X', 'First', 'Blah', 'Another', 'New2'],
+                changes: [
+                    { status: 'added', value: 'X', index: 0, moved: 1 },
+                    { status: 'deleted', value: 'First', index: 0, moved: 1 },
+                    { status: 'added', value: 'First', index: 1, moved: 0 },
+                    { status: 'deleted', value: 'X', index: 1, moved: 0 }
                 ]
             });
 
@@ -257,7 +280,8 @@ describe('Observable Array change tracking', function() {
 
         // The ordering of added/deleted items for replaced entries isn't defined, so
         // we'll sort by index and then status just so the tests can get consistent results
-        changeList.sort(compareChangeListItems);
+        if (changeList && changeList.sort)
+            changeList.sort(compareChangeListItems);
         expect(changeList).toEqual(options.changes);
     }
 

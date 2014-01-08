@@ -66,6 +66,7 @@ ko.subscription.prototype['setEager'] = function (value) {
 };
 
 ko.subscribable = function () {
+    ko.utils.setPrototypeOfOrExtend(this, ko.subscribable['fn']);
     this._subscriptions = {};
     this._isEager = false;
     this._eagerSubscriptionCount = 0;
@@ -87,7 +88,7 @@ ko.subscribable['configureEvents'] = function (options) {
     ko.utils.extend(subEvents, options.subEvents);
 };
 
-ko.subscribable['fn'] = {
+var ko_subscribable_fn = {
     subscribe: function (callback, callbackTarget, event, options) {
         event = event || defaultEvent;
         var boundCallback = callbackTarget ? callback.bind(callbackTarget) : callback;
@@ -108,7 +109,7 @@ ko.subscribable['fn'] = {
         event = event || defaultEvent;
         if (this.hasSubscriptionsForEvent(event)) {
             try {
-                ko.dependencyDetection.begin();
+                ko.dependencyDetection.begin(); // Begin suppressing dependency detection (by setting the top frame to undefined)
 
                 var subscriptions = this._subscriptions[event];
                 subscriptions = subscriptions ? subscriptions.slice() : [];
@@ -134,7 +135,7 @@ ko.subscribable['fn'] = {
                     }
                 }
             } finally {
-                ko.dependencyDetection.end();
+                ko.dependencyDetection.end(); // End suppressing dependency detection
             }
         }
     },
@@ -185,6 +186,19 @@ ko.subscribable['fn'] = {
 
     extend: applyExtenders
 };
+
+ko.exportProperty(ko_subscribable_fn, 'subscribe', ko_subscribable_fn.subscribe);
+ko.exportProperty(ko_subscribable_fn, 'extend', ko_subscribable_fn.extend);
+ko.exportProperty(ko_subscribable_fn, 'getSubscriptionsCount', ko_subscribable_fn.getSubscriptionsCount);
+
+// For browsers that support proto assignment, we overwrite the prototype of each
+// observable instance. Since observables are functions, we need Function.prototype
+// to still be in the prototype chain.
+if (ko.utils.canSetPrototype) {
+    ko.utils.setPrototypeOf(ko_subscribable_fn, Function.prototype);
+}
+
+ko.subscribable['fn'] = ko_subscribable_fn;
 
 
 ko.isSubscribable = function (instance) {
